@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <SPI.h>
+#include <EEPROM.h>
 //#include <Wire.h>
 
 #define LOG_ENABLED
@@ -15,6 +16,12 @@
 #define LOG_LN(x)
 #endif
 
+#define AdcValuesWindowsCount (10)
+#define DRDY (D2)
+#define BUTTON_CALIBRATION (D8) // calibration button pin
+// define the number of bytes you want to access
+#define EEPROM_SIZE 2 //short type
+
 typedef enum
 {
   NORMAL,
@@ -23,21 +30,18 @@ typedef enum
 
 typedef struct
 {
-  uint minEarthAdcIndex;
-  uint maxEarthAdcIndex;
-  uint middleAdcIndex;
+  short minEarthAdcIndex = 0;
+  short maxEarthAdcIndex = 0;
+  short middleAdcIndex = 0;
 } CalInfoType;
 
-uint adcValue = 0;
+ushort adcValue = 0;
 //int adcValueAverage = 0;
 //byte adcValueByte1 = 0;
 //byte adcValueByte2 = 0;
 uint adcValuesSum = 0;
 uint adcValuesAverage = 0;
-#define AdcValuesWindowsCount (10)
 uint adcValuesWindow[AdcValuesWindowsCount] = {0};
-#define DRDY (D2)
-#define BUTTON_CALIBRATION (D8) // calibration button pin
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 //bool adcDataAsked = false;
 unsigned long currentMillis = 0;
@@ -49,7 +53,7 @@ unsigned long buttonCalibrationPushedMillis = 0; // when button for calibration 
 unsigned long readAdcCalModeDelay = 100; // wait 
 unsigned long LastAdcReadCalModeMillis = 0; // period for reading ADC in calibration mode
 ModeType workingMode = NORMAL;
-CalInfoType calibrationInfo = {0};
+CalInfoType calibrationInfo;
 
 
 AD770X ad7705(5.0, D10, D11, D12, D13, D9, DRDY);
@@ -60,24 +64,29 @@ void u8g2_prepare()
 }
 
 void setup() {
-    // put your setup code here, to run once:
-    Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
-    u8g2_prepare();
-    pinMode(BUTTON_CALIBRATION, INPUT_PULLUP);
+  // put your setup code here, to run once:
+  Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
+  u8g2_prepare();
+  // initialize EEPROM with predefined size
+  EEPROM.begin(EEPROM_SIZE);
+  pinMode(BUTTON_CALIBRATION, INPUT_PULLUP);
 
-    ad7705.resetHard();
-    ad7705.reset();
-    
-    LOG_LN();
-    LOG_LN("--Start--");
-    
-    ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
+  ad7705.resetHard();
+  ad7705.reset();
+  
+  LOG_LN();
+  LOG_LN("--Start--");
+  
+  ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
 //    TM7705.init(AD770X::CHN_AIN2, AD770X::CLK_DIV_1, AD770X::BIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_50);
-    LOG_LN("--Init Done--");
+  LOG_LN("--Init Done--");
 
-    currentMillis = millis();
-    LastAdcReadMillis = currentMillis;
-    LastDrawMillis = LastAdcReadMillis;
+  currentMillis = millis();
+  LastAdcReadMillis = currentMillis;
+  LastDrawMillis = LastAdcReadMillis;
+
+  // read the 2 bytes of middleAdcIndex from flash memory
+  calibrationInfo.middleAdcIndex = EEPROM.read(0);
 }
 /*
 void setup() {
@@ -217,7 +226,7 @@ void ModeNormalHandler()
     // update the time when button was pushed
     buttonCalibrationPushedMillis = currentMillis;
     workingMode = CALIBRATION;
-    memset(&calibrationInfo, 0, sizeof(calibrationInfo));
+    calibrationInfo = CalInfoType();
   }
 }
 
@@ -250,6 +259,9 @@ void ModeCalibrationHandler()
     buttonCalibrationPushedMillis = currentMillis;
     workingMode = NORMAL;
     calibrationInfo.middleAdcIndex = (calibrationInfo.minEarthAdcIndex + calibrationInfo.maxEarthAdcIndex) / 2;
+    // save the LED state in flash memory
+    EEPROM.write(0, calibrationInfo.middleAdcIndex);
+    EEPROM.commit();
   }
 }
 
