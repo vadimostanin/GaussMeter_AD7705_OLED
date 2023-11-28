@@ -6,7 +6,7 @@
 #include <EEPROM.h>
 //#include <Wire.h>
 
-//#define LOG_ENABLED
+#define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -47,7 +47,7 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 100; // period for reading ADC in normal mode
 unsigned long LastAdcReadMillis = 0; // when ADC was read
-unsigned long drawDelay = 100; // wait to draw
+unsigned long drawDelay = 500; // wait to draw
 unsigned long LastDrawMillis = 0; // when last draw happened
 unsigned long buttonCalibrationDelay = 50;
 bool          buttonCalibrationPushed = false;
@@ -75,10 +75,7 @@ void setup() {
 
   ad7705.resetHard();
   ad7705.reset();
-  
-  LOG_LN();
-  LOG_LN("--Start--");
-  
+
   ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
 //    TM7705.init(AD770X::CHN_AIN2, AD770X::CLK_DIV_1, AD770X::BIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_50);
   LOG_LN("--Init Done--");
@@ -88,7 +85,11 @@ void setup() {
   LastDrawMillis = LastAdcReadMillis;
 
   // read the 2 bytes of middleAdcIndex from flash memory
-  calibrationInfo.middleAdcIndex = EEPROM.read(0);
+  calibrationInfo.middleAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
+  LOG("calibrationInfo.middleAdcIndex=");
+  LOG_LN(calibrationInfo.middleAdcIndex);
+  LOG_LN();
+  LOG_LN("--Start--");
 }
 /*
 void setup() {
@@ -118,20 +119,22 @@ void adcWindow_push(int value)
 {
   static int window_position = 0;
   static int adcValuesCount = 0;
-  static char isAdcValuesNotFull = 0;
-  if(1 == isAdcValuesNotFull)
+  static char isAdcValuesNotFull = true;
+  if(true == isAdcValuesNotFull)
   {
     isAdcValuesNotFull = ((adcValuesCount + 1) <= AdcValuesWindowsCount);
   }
   switch(isAdcValuesNotFull)
   {
     case true:
+    LOG("array not full");
       ++adcValuesCount;
       adcValuesSum += value;
       adcValuesAverage = adcValuesSum / adcValuesCount;
       adcValuesWindow[adcValuesCount - 1] = value;
     break;
     case false:
+    LOG("array full");
       adcValuesSum -= adcValuesWindow[window_position];
       adcValuesSum += value;
       adcValuesAverage = adcValuesSum / AdcValuesWindowsCount;
@@ -161,6 +164,10 @@ void drawNormalMode(const int adc)
 {
   static uint i = 0;
   u8g2.firstPage();
+  for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
+  {
+    u8g2.nextPage();
+  }
   do {
     u8g2.setFont(u8g2_font_7x14_tf);
     //u8g2.drawStr(0, 24, "Hello World!");
@@ -188,6 +195,7 @@ void drawNormalMode(const int adc)
     }
     //u8g2.drawBox(0, 0, 128, 64 );
   } while ( u8g2.nextPage() );
+//  u8g2.sendBuffer();
   ++i;
 }
 
@@ -219,10 +227,12 @@ void ModeNormalHandler()
     }
 //    adcValue = ad7705.readADResult(AD770X::CHN_AIN1, 2.5);
     adcValue = ad7705.readADResultRaw(AD770X::CHN_AIN1);
-    LOG("adcValue=");
+    LOG("readadcValue=");
     LOG_LN(adcValue);
     adcWindow_push(adcValue);
     adcValue = adcWindow_get_avg();
+    LOG("adcValue=");
+    LOG_LN(adcValue);
     LastAdcReadMillis = currentMillis;
   }
 
@@ -293,7 +303,8 @@ void ModeCalibrationHandler()
       LOG("calibrationInfo.middleAdcIndex=");
       LOG_LN(calibrationInfo.middleAdcIndex);
       // save the LED state in flash memory
-      EEPROM.write(0, calibrationInfo.middleAdcIndex);
+      EEPROM.write(0, (calibrationInfo.middleAdcIndex & 0xff));//lower byte
+      EEPROM.write(1, (calibrationInfo.middleAdcIndex >> 8));//higher byte
       EEPROM.commit();
     }
     buttonCalibrationPushedMillis = currentMillis;
