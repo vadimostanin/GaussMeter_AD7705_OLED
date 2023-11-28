@@ -49,6 +49,8 @@ unsigned long readAdcNormalModeDelay = 100; // period for reading ADC in normal 
 unsigned long LastAdcReadMillis = 0; // when ADC was read
 unsigned long drawDelay = 100; // wait to draw
 unsigned long LastDrawMillis = 0; // when last draw happened
+unsigned long buttonCalibrationDelay = 50;
+bool          buttonCalibrationPushed = false;
 unsigned long buttonCalibrationPushedMillis = 0; // when button for calibration was released
 unsigned long readAdcCalModeDelay = 100; // wait 
 unsigned long LastAdcReadCalModeMillis = 0; // period for reading ADC in calibration mode
@@ -169,8 +171,8 @@ void drawNormalMode(const int adc)
     u8g2.printf("Volts=%f", adc * 1.0 / 65536.0 * 5.0 - 0.0);//2.5//For MODE_SELF_CAL
     u8g2.setCursor(0, 40);
     const uint magn_B_index_zero = calibrationInfo.middleAdcIndex;
-    LOG("magn_B_index_zero= ");
-    LOG_LN(magn_B_index_zero);
+//    LOG("magn_B_index_zero= ");
+//    LOG_LN(magn_B_index_zero);
     const int magn_B_index = adc - magn_B_index_zero;
 //    LOG("magn_B_index= ");
 //    LOG_LN(magn_B_index);
@@ -203,13 +205,13 @@ void ModeNormalHandler()
 {
   if ((unsigned long)(currentMillis - LastAdcReadMillis) >= readAdcNormalModeDelay)
   {
-    LOG("CH1: ");
+//    LOG("CH1: ");
     while (!ad7705.dataReady(AD770X::CHN_AIN1)) {
         ;
     }
 //    adcValue = ad7705.readADResult(AD770X::CHN_AIN1, 2.5);
     adcValue = ad7705.readADResultRaw(AD770X::CHN_AIN1);
-    LOG_LN(adcValue);
+//    LOG_LN(adcValue);
     adcWindow_push(adcValue);
     adcValue = adcWindow_get_avg();
     LastAdcReadMillis = currentMillis;
@@ -222,11 +224,22 @@ void ModeNormalHandler()
   }
 
   // check the button for calibration
-  if (digitalRead(BUTTON_CALIBRATION) == LOW) {
-    // update the time when button was pushed
+  if ((unsigned long)(currentMillis - buttonCalibrationPushedMillis) >= buttonCalibrationDelay )
+  {
+    if(digitalRead(BUTTON_CALIBRATION) == LOW) {
+      LOG_LN("Button is pressed");
+      // update the time when button was pushed
+      buttonCalibrationPushed = true;
+    }
+    else if(buttonCalibrationPushed && digitalRead(BUTTON_CALIBRATION) == HIGH)
+    {
+      LOG_LN("Button is released");
+      // update the time when button was released
+      buttonCalibrationPushed = false;
+      workingMode = CALIBRATION;
+      calibrationInfo = CalInfoType();
+    }
     buttonCalibrationPushedMillis = currentMillis;
-    workingMode = CALIBRATION;
-    calibrationInfo = CalInfoType();
   }
 }
 
