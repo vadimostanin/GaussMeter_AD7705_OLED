@@ -6,7 +6,7 @@
 #include <EEPROM.h>
 //#include <Wire.h>
 
-#define LOG_ENABLED
+//#define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -30,9 +30,9 @@ typedef enum
 
 typedef struct
 {
-  short minEarthAdcIndex = 0;
-  short maxEarthAdcIndex = 0;
-  short middleAdcIndex = 0;
+  unsigned short minEarthAdcIndex = 0xffff;
+  unsigned short maxEarthAdcIndex = 0;
+  unsigned short middleAdcIndex = 0;
 } CalInfoType;
 
 ushort adcValue = 0;
@@ -171,17 +171,21 @@ void drawNormalMode(const int adc)
     u8g2.printf("Volts=%f", adc * 1.0 / 65536.0 * 5.0 - 0.0);//2.5//For MODE_SELF_CAL
     u8g2.setCursor(0, 40);
     const uint magn_B_index_zero = calibrationInfo.middleAdcIndex;
-//    LOG("magn_B_index_zero= ");
-//    LOG_LN(magn_B_index_zero);
     const int magn_B_index = adc - magn_B_index_zero;
-//    LOG("magn_B_index= ");
-//    LOG_LN(magn_B_index);
+    const int magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
+    LOG("magn_B_index= ");
+    LOG_LN(magn_B_index);
     const int magn_B_earth_max_index = 10;
     const float magn_B_earth_ratio = ((float)magn_B_index) / (float)magn_B_earth_max_index;
-    const float magn_B_tesla = magn_B_earth_ratio * 50.0; //50uT = 1.0 ratio
-//    LOG("magn_B_tesla= ");
-//    LOG_LN(magn_B_tesla);
-    u8g2.printf("B: %d uT", (int)magn_B_tesla);
+    const int magn_B_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
+    if(magn_B_index_abs <= 200)//
+    {
+      u8g2.printf("B: %d uT", (int)magn_B_tesla);
+    }
+    else
+    {
+      u8g2.printf("B: %d.%d%d%d mT", magn_B_tesla / 1000, (magn_B_index_abs % 1000) / 100, (magn_B_index_abs % 100) / 10, (magn_B_index_abs % 10));
+    }
     //u8g2.drawBox(0, 0, 128, 64 );
   } while ( u8g2.nextPage() );
   ++i;
@@ -196,8 +200,13 @@ void drawCalibrationMode()
     u8g2.setCursor(0, 10);
     u8g2.printf("Calibration...");
 
-    u8g2.setCursor(0, 30);
-    u8g2.printf("MOVE THE SENSOR RANDOMLY ORDER AROUND ALL AXIS");
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setCursor(0, 25);
+    u8g2.printf("TURN THE SENSOR");
+    u8g2.setCursor(0, 40);
+    u8g2.printf("RANDOMLY ORDER");
+    u8g2.setCursor(0, 55);
+    u8g2.printf("AROUND ALL AXIS");
   } while ( u8g2.nextPage() );
 }
 
@@ -205,13 +214,13 @@ void ModeNormalHandler()
 {
   if ((unsigned long)(currentMillis - LastAdcReadMillis) >= readAdcNormalModeDelay)
   {
-//    LOG("CH1: ");
     while (!ad7705.dataReady(AD770X::CHN_AIN1)) {
         ;
     }
 //    adcValue = ad7705.readADResult(AD770X::CHN_AIN1, 2.5);
     adcValue = ad7705.readADResultRaw(AD770X::CHN_AIN1);
-//    LOG_LN(adcValue);
+    LOG("adcValue=");
+    LOG_LN(adcValue);
     adcWindow_push(adcValue);
     adcValue = adcWindow_get_avg();
     LastAdcReadMillis = currentMillis;
@@ -266,15 +275,28 @@ void ModeCalibrationHandler()
     drawCalibrationMode();
     LastDrawMillis = currentMillis;
   }
-  // check the button for switching to normal mode
-  if (digitalRead(BUTTON_CALIBRATION) == LOW) {
-    // update the time when button was pushed
+  // check the button for calibration
+  if ((unsigned long)(currentMillis - buttonCalibrationPushedMillis) >= buttonCalibrationDelay )
+  {
+    if(digitalRead(BUTTON_CALIBRATION) == LOW) {
+      LOG_LN("Button is pressed");
+      // update the time when button was pushed
+      buttonCalibrationPushed = true;
+    }
+    else if(buttonCalibrationPushed && digitalRead(BUTTON_CALIBRATION) == HIGH)
+    {
+      LOG_LN("Button is released");
+      // update the time when button was released
+      buttonCalibrationPushed = false;
+      workingMode = NORMAL;
+      calibrationInfo.middleAdcIndex = (calibrationInfo.minEarthAdcIndex + calibrationInfo.maxEarthAdcIndex) / 2;
+      LOG("calibrationInfo.middleAdcIndex=");
+      LOG_LN(calibrationInfo.middleAdcIndex);
+      // save the LED state in flash memory
+      EEPROM.write(0, calibrationInfo.middleAdcIndex);
+      EEPROM.commit();
+    }
     buttonCalibrationPushedMillis = currentMillis;
-    workingMode = NORMAL;
-    calibrationInfo.middleAdcIndex = (calibrationInfo.minEarthAdcIndex + calibrationInfo.maxEarthAdcIndex) / 2;
-    // save the LED state in flash memory
-    EEPROM.write(0, calibrationInfo.middleAdcIndex);
-    EEPROM.commit();
   }
 }
 
