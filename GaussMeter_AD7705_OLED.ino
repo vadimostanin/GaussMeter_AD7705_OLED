@@ -16,28 +16,31 @@
 #define LOG_LN(x)
 #endif
 
-#define ESP8266_WEMOS_D1
+//#define ESP8266_WEMOS_D1
+#define ESP32_S2
 
 #ifdef ESP8266_WEMOS_D1
 #define PIN_SDA (D4)
 #define PIN_SCL (D3)
-#define BUTTON_CALIBRATION (D8) // calibration button pin
 #define PIN_CS (D10)
 #define PIN_MOSI (D11)
 #define PIN_MISO (D12)
 #define PIN_SPIClock (D13)
 #define PIN_RST (D9)
 #define PIN_DRDY (D2)
-#elif ESP32_S2
-#define PIN_SDA ()
-#define PIN_SCL ()
-#define BUTTON_CALIBRATION () // calibration button pin
-#define PIN_CS ()
-#define PIN_MOSI ()
-#define PIN_MISO ()
-#define PIN_SPIClock (3)
-#define PIN_RST ()
-#define PIN_DRDY ()
+#define BUTTON_CALIBRATION (D8) // calibration button pin
+#else
+#ifdef ESP32_S2
+#define PIN_SDA (1)
+#define PIN_SCL (2)
+#define PIN_CS (3)
+#define PIN_MOSI (4)
+#define PIN_MISO (5)
+#define PIN_SPIClock (5)
+#define PIN_RST (7)
+#define PIN_DRDY (8)
+#define BUTTON_CALIBRATION (9) // calibration button pin
+#endif
 #endif
 
 #define AdcValuesWindowsCount (10)
