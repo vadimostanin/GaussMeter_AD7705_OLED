@@ -4,9 +4,9 @@
 #include <U8g2lib.h>
 #include <SPI.h>
 #include <EEPROM.h>
-//#include <Wire.h>
+#include <Wire.h>
 
-#define LOG_ENABLED
+// #define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -16,9 +16,31 @@
 #define LOG_LN(x)
 #endif
 
-#define AdcValuesWindowsCount (10)
-#define DRDY (D2)
+#define ESP8266_WEMOS_D1
+
+#ifdef ESP8266_WEMOS_D1
+#define PIN_SDA (D4)
+#define PIN_SCL (D3)
 #define BUTTON_CALIBRATION (D8) // calibration button pin
+#define PIN_CS (D10)
+#define PIN_MOSI (D11)
+#define PIN_MISO (D12)
+#define PIN_SPIClock (D13)
+#define PIN_RST (D9)
+#define PIN_DRDY (D2)
+#elif ESP32_S2
+#define PIN_SDA ()
+#define PIN_SCL ()
+#define BUTTON_CALIBRATION () // calibration button pin
+#define PIN_CS ()
+#define PIN_MOSI ()
+#define PIN_MISO ()
+#define PIN_SPIClock (3)
+#define PIN_RST ()
+#define PIN_DRDY ()
+#endif
+
+#define AdcValuesWindowsCount (10)
 // define the number of bytes you want to access
 #define EEPROM_SIZE 2 //short type
 
@@ -47,7 +69,7 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 100; // period for reading ADC in normal mode
 unsigned long LastAdcReadMillis = 0; // when ADC was read
-unsigned long drawDelay = 500; // wait to draw
+unsigned long drawDelay = 300; // wait to draw
 unsigned long LastDrawMillis = 0; // when last draw happened
 unsigned long buttonCalibrationDelay = 50;
 bool          buttonCalibrationPushed = false;
@@ -58,7 +80,7 @@ ModeType workingMode = NORMAL;
 CalInfoType calibrationInfo;
 
 
-AD770X ad7705(5.0, D10, D11, D12, D13, D9, DRDY);
+AD770X ad7705(5.0, PIN_CS, PIN_MOSI, PIN_MISO, PIN_SPIClock, PIN_RST, PIN_DRDY);
 
 void u8g2_prepare()
 {
@@ -68,6 +90,9 @@ void u8g2_prepare()
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
+
+  Wire.begin(PIN_SDA, PIN_SCL);
+
   u8g2_prepare();
   // initialize EEPROM with predefined size
   EEPROM.begin(EEPROM_SIZE);
@@ -94,7 +119,7 @@ void setup() {
 /*
 void setup() {
     Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
-    pinMode(DRDY, INPUT);
+    pinMode(PIN_DRDY, INPUT);
 
     u8g2_prepare();
 
@@ -109,8 +134,8 @@ void setup() {
 //    SPI.transfer(0x7c); // gain = 128, unipolar mode, buffer off, clear FSYNC and perform a Self Calibration 
     delay(1);
 
-    Serial.println("--Start waiting DRDY--");
-    while(digitalRead(DRDY));
+    Serial.println("--Start waiting PIN_DRDY--");
+    while(digitalRead(PIN_DRDY));
     Serial.println("--Init Done--");
     
 }
@@ -343,8 +368,8 @@ void loop() {
       SPI.transfer(0x38); // next operation - read from the data register
       adcDataAsked = true;
     }
-//    while(digitalRead(DRDY)); // wait for /DRDY to go low  
-    if(true == adcDataAsked && LOW == digitalRead(DRDY))
+//    while(digitalRead(PIN_DRDY)); // wait for /PIN_DRDY to go low  
+    if(true == adcDataAsked && LOW == digitalRead(PIN_DRDY))
     {
       adcDataAsked = false;;
       adcValueByte1 = SPI.transfer(0x0);
