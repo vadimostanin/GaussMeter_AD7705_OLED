@@ -163,6 +163,15 @@ double getZeroCalibrationQuadraticAproximation(double value)
 void drawNormalMode(const int adc)
 {
   static uint i = 0;
+  const uint magn_B_index_zero = calibrationInfo.middleAdcIndex;
+  const int magn_B_index = adc - magn_B_index_zero;
+  const int magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
+  LOG("magn_B_index= ");
+  LOG_LN(magn_B_index);
+  const int magn_B_earth_max_index = 10;
+  const float magn_B_earth_ratio = ((float)magn_B_index) / (float)magn_B_earth_max_index;
+  const int magn_B_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
+
   u8g2.firstPage();
   for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
   {
@@ -177,14 +186,6 @@ void drawNormalMode(const int adc)
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
     u8g2.printf("Volts=%f", adc * 1.0 / 65536.0 * 5.0 - 0.0);//2.5//For MODE_SELF_CAL
     u8g2.setCursor(0, 40);
-    const uint magn_B_index_zero = calibrationInfo.middleAdcIndex;
-    const int magn_B_index = adc - magn_B_index_zero;
-    const int magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
-    LOG("magn_B_index= ");
-    LOG_LN(magn_B_index);
-    const int magn_B_earth_max_index = 10;
-    const float magn_B_earth_ratio = ((float)magn_B_index) / (float)magn_B_earth_max_index;
-    const int magn_B_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
     if(magn_B_index_abs <= 200)//
     {
       u8g2.printf("B: %d uT", (int)magn_B_tesla);
