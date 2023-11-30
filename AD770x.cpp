@@ -111,7 +111,7 @@ bool AD770X::dataReady(byte channel) {
     return (b1 & 0x80) == 0x0;
 */
 
-    if (digitalRead(pinDRDY)== 0)
+    if (digitalRead(pinDRDY) == LOW)
     {
       return true;
     }
@@ -143,7 +143,7 @@ AD770X::AD770X(double vref, int _pinCS, int _pinMOSI, int _pinMISO, int _pinSPIC
     pinMode(pinCS, OUTPUT);
     pinMode(pinRST, OUTPUT);
     pinMode(pinDRDY, INPUT);
-    digitalWrite(pinDRDY,HIGH);
+    digitalWrite(pinDRDY, HIGH);
 
     digitalWrite(pinCS, HIGH);
 
@@ -159,6 +159,8 @@ void AD770X::init(byte channel, byte clkDivider, byte CLK_MHz, byte polarity, by
     writeSetupRegister(MODE_SELF_CAL, gain, polarity, 0, 0);
 
     while (!dataReady(channel)) {
+      Serial.println("waiting data");
+      delay(10);
     };
 }
 

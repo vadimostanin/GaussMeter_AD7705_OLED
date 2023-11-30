@@ -16,10 +16,11 @@
 #define LOG_LN(x)
 #endif
 
-//#define ESP8266_WEMOS_D1
-#define ESP32_S2
+//#define DEVBOARD_ESP8266_WEMOS_D1
+#define DEVBOARD_ESP32_S2
+//#define DEVBOARD_CH552
 
-#ifdef ESP8266_WEMOS_D1
+#ifdef DEVBOARD_ESP8266_WEMOS_D1
 #define PIN_SDA (D4)
 #define PIN_SCL (D3)
 #define PIN_CS (D10)
@@ -29,18 +30,35 @@
 #define PIN_RST (D9)
 #define PIN_DRDY (D2)
 #define BUTTON_CALIBRATION (D8) // calibration button pin
-#else
-#ifdef ESP32_S2
-#define PIN_SDA (1)
-#define PIN_SCL (2)
-#define PIN_CS (3)
-#define PIN_MOSI (4)
-#define PIN_MISO (5)
-#define PIN_SPIClock (5)
-#define PIN_RST (7)
-#define PIN_DRDY (8)
-#define BUTTON_CALIBRATION (9) // calibration button pin
+#define DEVBOARD_DEFINED
 #endif
+#ifdef DEVBOARD_ESP32_S2
+#define PIN_SDA (8)
+#define PIN_SCL (9)
+#define PIN_CS (12)
+#define PIN_MOSI (11)
+#define PIN_MISO (9)
+#define PIN_SPIClock (7)
+#define PIN_RST (5)
+#define PIN_DRDY (40)
+#define BUTTON_CALIBRATION (3) // calibration button pin
+#define DEVBOARD_DEFINED
+#endif
+#ifdef DEVBOARD_CH552
+#define PIN_SDA (30)
+#define PIN_SCL (31)
+#define PIN_CS (11)
+#define PIN_MOSI (10)
+#define PIN_MISO (17)
+#define PIN_SPIClock (16)
+#define PIN_RST (15)
+#define PIN_DRDY (14)
+#define BUTTON_CALIBRATION (32) // calibration button pin
+#define DEVBOARD_DEFINED
+#endif
+
+#ifndef DEVBOARD_DEFINED
+#error "No board supported"
 #endif
 
 #define AdcValuesWindowsCount (10)
@@ -70,7 +88,7 @@ uint adcValuesWindow[AdcValuesWindowsCount] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 //bool adcDataAsked = false;
 unsigned long currentMillis = 0;
-unsigned long readAdcNormalModeDelay = 100; // period for reading ADC in normal mode
+unsigned long readAdcNormalModeDelay = 50; // period for reading ADC in normal mode
 unsigned long LastAdcReadMillis = 0; // when ADC was read
 unsigned long drawDelay = 300; // wait to draw
 unsigned long LastDrawMillis = 0; // when last draw happened
@@ -91,10 +109,11 @@ void u8g2_prepare()
 }
 
 void setup() {
+  #ifdef LOG_ENABLED
   // put your setup code here, to run once:
   Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
-
-  Wire.begin(PIN_SDA, PIN_SCL);
+#endif
+  Wire.begin();//PIN_SDA, PIN_SCL
 
   u8g2_prepare();
   // initialize EEPROM with predefined size
@@ -105,7 +124,6 @@ void setup() {
   ad7705.reset();
 
   ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
-//    TM7705.init(AD770X::CHN_AIN2, AD770X::CLK_DIV_1, AD770X::BIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_50);
   LOG_LN("--Init Done--");
 
   currentMillis = millis();
