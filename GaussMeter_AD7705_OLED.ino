@@ -233,12 +233,12 @@ void drawNormalMode(const int adc)
   LOG_LN(calibrationBasedInfo.absAdcValueForEarthField);
   // const int magn_B_earth_max_index = calibrationBasedInfo.absAdcValueForEarthField;
   const float magn_B_earth_ratio = ((float)magn_B_index) / (float)calibrationBasedInfo.absAdcValueForEarthField;
-  const int magn_B_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
+  const int magn_B_u_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
 
   u8g2.firstPage();
   for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
   {
-    u8g2.nextPage();
+    // u8g2.nextPage();
   }
   do {
     u8g2.setFont(u8g2_font_7x14_tf);
@@ -249,15 +249,19 @@ void drawNormalMode(const int adc)
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
     u8g2.printf("Volts=%f", adc * 1.0 / 65536.0 * 5.0 - 0.0);//2.5//For MODE_SELF_CAL
     u8g2.setCursor(0, 40);
-    if(magn_B_index_abs <= 200)//
+    if(abs(magn_B_u_tesla) < 1000)//
     {
-      u8g2.printf("B: %d uT", (int)magn_B_tesla);
+      u8g2.printf("B: %d uT", (int)magn_B_u_tesla);
     }
     else
     {
-      u8g2.printf("B: %d.%d%d%d mT", magn_B_tesla / 1000, (magn_B_index_abs % 1000) / 100, (magn_B_index_abs % 100) / 10, (magn_B_index_abs % 10));
+      u8g2.printf("B: %d.%d%d%d mT", magn_B_u_tesla / 1000, (magn_B_index_abs % 1000) / 100, (magn_B_index_abs % 100) / 10, (magn_B_index_abs % 10));
     }
-    //u8g2.drawBox(0, 0, 128, 64 );
+        u8g2.setCursor(0, 50);
+    u8g2.setFont(u8g2_font_5x8_tf);
+    u8g2.printf("github.com/vadimostanin");
+    u8g2.setCursor(0, 57);
+    u8g2.printf("/GaussMeter_AD7705_OLED");
   } while ( u8g2.nextPage() );
 //  u8g2.sendBuffer();
   ++i;
