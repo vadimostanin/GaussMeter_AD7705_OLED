@@ -6,7 +6,7 @@
 #include <EEPROM.h>
 #include <Wire.h>
 
-// #define LOG_ENABLED
+#define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -75,8 +75,13 @@ typedef struct
 {
   unsigned short minEarthAdcIndex = 0xffff;
   unsigned short maxEarthAdcIndex = 0;
-  unsigned short middleAdcIndex = 0;
-} CalInfoType;
+} CalibrationInfoType;
+
+typedef struct
+{
+    unsigned short middleAdcIndex = 0;
+    unsigned short absAdcValueForEarthField = 0;
+} CalibrationBasedInfoType;
 
 ushort adcValue = 0;
 //int adcValueAverage = 0;
@@ -98,7 +103,8 @@ unsigned long buttonCalibrationPushedMillis = 0; // when button for calibration 
 unsigned long readAdcCalModeDelay = 100; // wait 
 unsigned long LastAdcReadCalModeMillis = 0; // period for reading ADC in calibration mode
 ModeType workingMode = NORMAL;
-CalInfoType calibrationInfo;
+CalibrationInfoType calibrationInfo;
+CalibrationBasedInfoType calibrationBasedInfo;
 
 
 AD770X ad7705(5.0, PIN_CS, PIN_MOSI, PIN_MISO, PIN_SPIClock, PIN_RST, PIN_DRDY);
@@ -106,6 +112,13 @@ AD770X ad7705(5.0, PIN_CS, PIN_MOSI, PIN_MISO, PIN_SPIClock, PIN_RST, PIN_DRDY);
 void u8g2_prepare()
 {
   u8g2.begin();
+}
+
+void convertCalibationInfo()
+{
+  calibrationBasedInfo.middleAdcIndex = calibrationInfo.minEarthAdcIndex + (calibrationInfo.maxEarthAdcIndex - calibrationInfo.minEarthAdcIndex) / 2;
+  calibrationBasedInfo.absAdcValueForEarthField = (calibrationInfo.maxEarthAdcIndex - calibrationBasedInfo.middleAdcIndex);
+  calibrationBasedInfo.absAdcValueForEarthField = calibrationBasedInfo.absAdcValueForEarthField < 1 ? 1 : calibrationBasedInfo.absAdcValueForEarthField;
 }
 
 void setup() {
@@ -131,9 +144,11 @@ void setup() {
   LastDrawMillis = LastAdcReadMillis;
 
   // read the 2 bytes of middleAdcIndex from flash memory
-  calibrationInfo.middleAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
-  LOG("calibrationInfo.middleAdcIndex=");
-  LOG_LN(calibrationInfo.middleAdcIndex);
+  calibrationInfo.minEarthAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
+  calibrationInfo.maxEarthAdcIndex = EEPROM.read(2) | (EEPROM.read(3) << 8);
+  convertCalibationInfo();
+  LOG("calibrationBasedInfo.middleAdcIndex=");
+  LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
   LOG_LN("--Start--");
 }
@@ -173,14 +188,14 @@ void adcWindow_push(int value)
   switch(isAdcValuesNotFull)
   {
     case true:
-    LOG("array not full");
+    // LOG("array not full");
       ++adcValuesCount;
       adcValuesSum += value;
       adcValuesAverage = adcValuesSum / adcValuesCount;
       adcValuesWindow[adcValuesCount - 1] = value;
     break;
     case false:
-    LOG("array full");
+    // LOG("array full");
       adcValuesSum -= adcValuesWindow[window_position];
       adcValuesSum += value;
       adcValuesAverage = adcValuesSum / AdcValuesWindowsCount;
@@ -209,13 +224,15 @@ double getZeroCalibrationQuadraticAproximation(double value)
 void drawNormalMode(const int adc)
 {
   static uint i = 0;
-  const uint magn_B_index_zero = calibrationInfo.middleAdcIndex;
+  const uint magn_B_index_zero = calibrationBasedInfo.middleAdcIndex;
   const int magn_B_index = adc - magn_B_index_zero;
   const int magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
   LOG("magn_B_index= ");
   LOG_LN(magn_B_index);
-  const int magn_B_earth_max_index = 10;
-  const float magn_B_earth_ratio = ((float)magn_B_index) / (float)magn_B_earth_max_index;
+  LOG("calibrationBasedInfo.absAdcValueForEarthField= ");
+  LOG_LN(calibrationBasedInfo.absAdcValueForEarthField);
+  // const int magn_B_earth_max_index = calibrationBasedInfo.absAdcValueForEarthField;
+  const float magn_B_earth_ratio = ((float)magn_B_index) / (float)calibrationBasedInfo.absAdcValueForEarthField;
   const int magn_B_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
 
   u8g2.firstPage();
@@ -274,12 +291,12 @@ void ModeNormalHandler()
     }
 //    adcValue = ad7705.readADResult(AD770X::CHN_AIN1, 2.5);
     adcValue = ad7705.readADResultRaw(AD770X::CHN_AIN1);
-    LOG("readadcValue=");
-    LOG_LN(adcValue);
+    // LOG("readadcValue=");
+    // LOG_LN(adcValue);
     adcWindow_push(adcValue);
     adcValue = adcWindow_get_avg();
-    LOG("adcValue=");
-    LOG_LN(adcValue);
+    // LOG("adcValue=");
+    // LOG_LN(adcValue);
     LastAdcReadMillis = currentMillis;
   }
 
@@ -303,7 +320,8 @@ void ModeNormalHandler()
       // update the time when button was released
       buttonCalibrationPushed = false;
       workingMode = CALIBRATION;
-      calibrationInfo = CalInfoType();
+      calibrationInfo = CalibrationInfoType();
+      calibrationBasedInfo = CalibrationBasedInfoType();
     }
     buttonCalibrationPushedMillis = currentMillis;
   }
@@ -346,12 +364,14 @@ void ModeCalibrationHandler()
       // update the time when button was released
       buttonCalibrationPushed = false;
       workingMode = NORMAL;
-      calibrationInfo.middleAdcIndex = (calibrationInfo.minEarthAdcIndex + calibrationInfo.maxEarthAdcIndex) / 2;
-      LOG("calibrationInfo.middleAdcIndex=");
-      LOG_LN(calibrationInfo.middleAdcIndex);
+      convertCalibationInfo();
+      LOG("calibrationBasedInfo.middleAdcIndex=");
+      LOG_LN(calibrationBasedInfo.middleAdcIndex);
       // save the LED state in flash memory
-      EEPROM.write(0, (calibrationInfo.middleAdcIndex & 0xff));//lower byte
-      EEPROM.write(1, (calibrationInfo.middleAdcIndex >> 8));//higher byte
+      EEPROM.write(0, (calibrationInfo.minEarthAdcIndex & 0xff));//lower byte
+      EEPROM.write(1, (calibrationInfo.minEarthAdcIndex >> 8));//higher byte
+      EEPROM.write(2, (calibrationInfo.maxEarthAdcIndex & 0xff));//lower byte
+      EEPROM.write(3, (calibrationInfo.maxEarthAdcIndex >> 8));//higher byte
       EEPROM.commit();
     }
     buttonCalibrationPushedMillis = currentMillis;
