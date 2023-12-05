@@ -33,8 +33,8 @@
 #define DEVBOARD_DEFINED
 #endif
 #ifdef DEVBOARD_ESP32_S2
-#define PIN_SDA (8)
-#define PIN_SCL (9)
+#define PIN_SDA (SDA)//33
+#define PIN_SCL (SCL)//35
 #define PIN_CS (12)
 #define PIN_MOSI (11)
 #define PIN_MISO (9)
