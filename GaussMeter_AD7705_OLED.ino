@@ -1,3 +1,5 @@
+#define F_CPU (240)
+
 #include "AD770X.h"
 
 #include <Arduino.h>
@@ -6,7 +8,7 @@
 #include <EEPROM.h>
 #include <Wire.h>
 
-#define LOG_ENABLED
+// #define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -121,28 +123,142 @@ void convertCalibationInfo()
   calibrationBasedInfo.absAdcValueForEarthField = calibrationBasedInfo.absAdcValueForEarthField < 1 ? 1 : calibrationBasedInfo.absAdcValueForEarthField;
 }
 
+#include "soc/rtc.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "freertos/xtensa_timer.h"
+void esp_timer_impl_update_apb_freq(uint32_t apb_ticks_per_us); //private in IDF
+static uint32_t calculateApb(struct rtc_cpu_freq_config_s * conf){
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
+	return APB_CLK_FREQ;
+#else
+    if(conf->freq_mhz >= 80){
+        return 80 * MHZ;
+    }
+    return (conf->source_freq_mhz * MHZ) / conf->div;
+#endif
+}
+
+bool my_setCpuFrequencyMhz(uint32_t cpu_freq_mhz){
+    struct rtc_cpu_freq_config_s conf, cconf;
+    uint32_t capb, apb;
+    //Get XTAL Frequency and calculate min CPU MHz
+    rtc_xtal_freq_t xtal = rtc_clk_xtal_freq_get();
+#if CONFIG_IDF_TARGET_ESP32
+    if(xtal > RTC_XTAL_FREQ_AUTO){
+        if(xtal < RTC_XTAL_FREQ_40M) {
+            if(cpu_freq_mhz <= xtal && cpu_freq_mhz != xtal && cpu_freq_mhz != (xtal/2)){
+                log_e("Bad frequency: %u MHz! Options are: 240, 160, 80, %u and %u MHz", cpu_freq_mhz, xtal, xtal/2);
+                return false;
+            }
+        } else if(cpu_freq_mhz <= xtal && cpu_freq_mhz != xtal && cpu_freq_mhz != (xtal/2) && cpu_freq_mhz != (xtal/4)){
+            log_e("Bad frequency: %u MHz! Options are: 240, 160, 80, %u, %u and %u MHz", cpu_freq_mhz, xtal, xtal/2, xtal/4);
+            return false;
+        }
+    }
+#endif
+    if(cpu_freq_mhz > xtal && cpu_freq_mhz != 240 && cpu_freq_mhz != 160 && cpu_freq_mhz != 80){
+        if(xtal >= RTC_XTAL_FREQ_40M){
+            log_e("Bad frequency: %u MHz! Options are: 240, 160, 80, %u, %u and %u MHz", cpu_freq_mhz, xtal, xtal/2, xtal/4);
+        } else {
+            log_e("Bad frequency: %u MHz! Options are: 240, 160, 80, %u and %u MHz", cpu_freq_mhz, xtal, xtal/2);
+        }
+        return false;
+    }
+#if CONFIG_IDF_TARGET_ESP32
+    //check if cpu supports the frequency
+    if(cpu_freq_mhz == 240){
+        //Check if ESP32 is rated for a CPU frequency of 160MHz only
+        if (REG_GET_BIT(EFUSE_BLK0_RDATA3_REG, EFUSE_RD_CHIP_CPU_FREQ_RATED) &&
+            REG_GET_BIT(EFUSE_BLK0_RDATA3_REG, EFUSE_RD_CHIP_CPU_FREQ_LOW)) {
+            log_e("Can not switch to 240 MHz! Chip CPU frequency rated for 160MHz.");
+            cpu_freq_mhz = 160;
+        }
+    }
+#endif
+    //Get current CPU clock configuration
+    rtc_clk_cpu_freq_get_config(&cconf);
+    //return if frequency has not changed
+    if(cconf.freq_mhz == cpu_freq_mhz){
+        return true;
+    }
+    //Get configuration for the new CPU frequency
+    if(!rtc_clk_cpu_freq_mhz_to_config(cpu_freq_mhz, &conf)){
+        log_e("CPU clock could not be set to %u MHz", cpu_freq_mhz);
+        return false;
+    }
+    //Current APB
+    capb = calculateApb(&cconf);
+    //New APB
+    apb = calculateApb(&conf);
+    
+    //Call peripheral functions before the APB change
+    // if(apb_change_callbacks){
+    //     triggerApbChangeCallback(APB_BEFORE_CHANGE, capb, apb);
+    // }
+    //Make the frequency change
+    rtc_clk_cpu_freq_set_config_fast(&conf);
+    if(capb != apb){
+        //Update REF_TICK (uncomment if REF_TICK is different than 1MHz)
+        //if(conf.freq_mhz < 80){
+        //    ESP_REG(APB_CTRL_XTAL_TICK_CONF_REG) = conf.freq_mhz / (REF_CLK_FREQ / MHZ) - 1;
+        // }
+        //Update APB Freq REG
+        rtc_clk_apb_freq_update(apb);
+        //Update esp_timer divisor
+        // esp_timer_impl_update_apb_freq(apb / MHZ);
+    }
+    //Update FreeRTOS Tick Divisor
+#if CONFIG_IDF_TARGET_ESP32C3
+
+#elif CONFIG_IDF_TARGET_ESP32S3
+
+#else
+    uint32_t fcpu = (conf.freq_mhz >= 80)?(conf.freq_mhz * MHZ):(apb);
+    _xt_tick_divisor = fcpu / XT_TICK_PER_SEC;
+#endif
+    //Call peripheral functions after the APB change
+    // if(apb_change_callbacks){
+    //     triggerApbChangeCallback(APB_AFTER_CHANGE, capb, apb);
+    // }
+    log_d("%s: %u / %u = %u Mhz, APB: %u Hz", (conf.source == RTC_CPU_FREQ_SRC_PLL)?"PLL":((conf.source == RTC_CPU_FREQ_SRC_APLL)?"APLL":((conf.source == RTC_CPU_FREQ_SRC_XTAL)?"XTAL":"8M")), conf.source_freq_mhz, conf.div, conf.freq_mhz, apb);
+    return true;
+}
+
 void setup() {
+  uint32_t Freq = 0;
   #ifdef LOG_ENABLED
   // put your setup code here, to run once:
   Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
+  Serial.flush();  // wait to empty the UART FIFO before changing the CPU Freq.
 #endif
+  LOG_LN(__LINE__);
+  //LOG_LN(millis() - current_millis);
+  delay(50);
+  LOG_LN(__LINE__);
+  // setCpuFrequencyMhz(160);
+  my_setCpuFrequencyMhz(40);
+  LOG_LN(__LINE__);
   Wire.begin();//PIN_SDA, PIN_SCL
-
+  LOG_LN(__LINE__);
   u8g2_prepare();
+  LOG_LN(__LINE__);
   // initialize EEPROM with predefined size
   EEPROM.begin(EEPROM_SIZE);
+  LOG_LN(__LINE__);
   pinMode(BUTTON_CALIBRATION, INPUT_PULLUP);
-
+LOG_LN(__LINE__);
   ad7705.resetHard();
   ad7705.reset();
-
+LOG_LN(__LINE__);
   ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
   LOG_LN("--Init Done--");
-
+LOG_LN(__LINE__);
   currentMillis = millis();
   LastAdcReadMillis = currentMillis;
   LastDrawMillis = LastAdcReadMillis;
-
+LOG_LN(__LINE__);
   // read the 2 bytes of middleAdcIndex from flash memory
   calibrationInfo.minEarthAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
   calibrationInfo.maxEarthAdcIndex = EEPROM.read(2) | (EEPROM.read(3) << 8);
@@ -150,7 +266,20 @@ void setup() {
   LOG("calibrationBasedInfo.middleAdcIndex=");
   LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
+  Freq = getCpuFrequencyMhz();
+  LOG("CPU Freq = ");
+  LOG(Freq);
+  LOG_LN(" MHz");
+  Freq = getXtalFrequencyMhz();
+  LOG("XTAL Freq = ");
+  LOG(Freq);
+  LOG_LN(" MHz");
+  Freq = getApbFrequency();
+  LOG("APB Freq = ");
+  LOG(Freq);
+  LOG_LN(" Hz");
   LOG_LN("--Start--");
+  LOG_LN(__LINE__);
 }
 /*
 void setup() {
@@ -394,7 +523,7 @@ void loop() {
     case CALIBRATION:
       ModeCalibrationHandler();
     break;
-  }  
+  }
 }
 
 /*
