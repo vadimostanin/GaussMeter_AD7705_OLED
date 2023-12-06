@@ -92,6 +92,7 @@ public:
     void init(byte channel);
     void init(byte channel, byte clkDivider, byte CLK_MHz, byte polarity, byte gain, byte updRate);
     void resetHard();
+    void selectChannel(byte channel);
     
 private:
     int pinMOSI;        //MOSI

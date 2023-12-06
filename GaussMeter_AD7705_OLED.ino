@@ -1,5 +1,3 @@
-#define F_CPU (240)
-
 #include "AD770X.h"
 
 #include <Arduino.h>
@@ -86,17 +84,16 @@ typedef struct
 } CalibrationBasedInfoType;
 
 ushort adcValue = 0;
-//int adcValueAverage = 0;
-//byte adcValueByte1 = 0;
-//byte adcValueByte2 = 0;
+ushort adcChannel2Value = 0;
 uint adcValuesSum = 0;
 uint adcValuesAverage = 0;
 uint adcValuesWindow[AdcValuesWindowsCount] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
-//bool adcDataAsked = false;
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 50; // period for reading ADC in normal mode
-unsigned long LastAdcReadMillis = 0; // when ADC was read
+unsigned long readAdcChannel2Delay = 60000; // period for reading ADC in normal mode
+unsigned long LastAdcReadMillis = 0; // when ADC channel 1 was read
+unsigned long LastAdcChannel2ReadMillis = 0; // when ADC channel 2 was read
 unsigned long drawDelay = 300; // wait to draw
 unsigned long LastDrawMillis = 0; // when last draw happened
 unsigned long buttonCalibrationDelay = 50;
@@ -228,14 +225,14 @@ bool my_setCpuFrequencyMhz(uint32_t cpu_freq_mhz){
 
 void setup() {
   uint32_t Freq = 0;
-  #ifdef LOG_ENABLED
+#ifdef LOG_ENABLED
   // put your setup code here, to run once:
   Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
   Serial.flush();  // wait to empty the UART FIFO before changing the CPU Freq.
 #endif
   LOG_LN(__LINE__);
   //LOG_LN(millis() - current_millis);
-  delay(50);
+  // delay(2000);
   LOG_LN(__LINE__);
   // setCpuFrequencyMhz(160);
   my_setCpuFrequencyMhz(40);
@@ -253,6 +250,7 @@ LOG_LN(__LINE__);
   ad7705.reset();
 LOG_LN(__LINE__);
   ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
+  ad7705.init(AD770X::CHN_AIN2, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
   LOG_LN("--Init Done--");
 LOG_LN(__LINE__);
   currentMillis = millis();
@@ -266,6 +264,15 @@ LOG_LN(__LINE__);
   LOG("calibrationBasedInfo.middleAdcIndex=");
   LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
+  while (!ad7705.dataReady(AD770X::CHN_AIN2));
+  ad7705.selectChannel(AD770X::CHN_AIN2);
+  adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
+  LOG("adcChannel2Value = ");
+  LOG_LN(adcChannel2Value);
+  adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
+  LOG("adcChannel2Value = ");
+  LOG_LN(adcChannel2Value);
+  ad7705.selectChannel(AD770X::CHN_AIN1);
   Freq = getCpuFrequencyMhz();
   LOG("CPU Freq = ");
   LOG(Freq);
@@ -376,7 +383,7 @@ void drawNormalMode(const int adc)
     u8g2.printf("#%d: ADC=%d", i, adc);
     u8g2.setCursor(0, 25);
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
-    u8g2.printf("Volts=%f", adc * 1.0 / 65536.0 * 5.0 - 0.0);//2.5//For MODE_SELF_CAL
+    u8g2.printf("Battery=%f", adcChannel2Value * 5.0 / 65536.0);
     u8g2.setCursor(0, 40);
     if(abs(magn_B_u_tesla) < 1000)//
     {
@@ -431,6 +438,19 @@ void ModeNormalHandler()
     // LOG("adcValue=");
     // LOG_LN(adcValue);
     LastAdcReadMillis = currentMillis;
+  }
+
+  if ((unsigned long)(currentMillis - LastAdcChannel2ReadMillis) >= readAdcChannel2Delay)
+  {
+    ad7705.selectChannel(AD770X::CHN_AIN2);
+    adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
+    LOG("adcChannel2Value=");
+    LOG_LN(adcChannel2Value);
+    adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
+    LOG("adcChannel2Value=");
+    LOG_LN(adcChannel2Value);
+    ad7705.selectChannel(AD770X::CHN_AIN1);
+    LastAdcChannel2ReadMillis = currentMillis;
   }
 
   if ((unsigned long)(currentMillis - LastDrawMillis) >= drawDelay)

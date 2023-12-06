@@ -80,9 +80,18 @@ unsigned int AD770X::readADResult() {
     return r;
 }
 
+void AD770X::selectChannel(byte channel)
+{
+  setNextOperation(REG_CMM, channel, 1);
+  digitalWrite(pinCS, LOW);
+  byte b1 = SPI.transfer(0x0);
+  digitalWrite(pinCS, HIGH);
+
+  //return (b1 & 0x80) == 0x0;
+}
+
 unsigned int AD770X::readADResultRaw(byte channel) {
-    while (!dataReady(channel)) {
-    };
+    while (!dataReady(channel));
     setNextOperation(REG_DATA, channel, 1);
 
     return readADResult();
@@ -102,21 +111,19 @@ double AD770X::readADResult(byte channel, float refOffset) {
 bool AD770X::dataReady(byte channel) {
   (void)channel;
 /*    
-    setNextOperation(REG_CMM, channel, 1);
+  setNextOperation(REG_CMM, channel, 1);
 
-    digitalWrite(pinCS, LOW);
-    byte b1 = SPI.transfer(0x0);
-    digitalWrite(pinCS, HIGH);
+  digitalWrite(pinCS, LOW);
+  byte b1 = SPI.transfer(0x0);
+  digitalWrite(pinCS, HIGH);
 
-    return (b1 & 0x80) == 0x0;
+  return (b1 & 0x80) == 0x0;
 */
-
-    if (digitalRead(pinDRDY) == LOW)
-    {
-      return true;
-    }
-
-    return false;
+  if (digitalRead(pinDRDY) == LOW)
+  {
+    return true;
+  }
+  return false;
 }
 
 void AD770X::reset() {
