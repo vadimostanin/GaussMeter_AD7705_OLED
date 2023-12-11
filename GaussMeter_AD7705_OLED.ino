@@ -6,7 +6,7 @@
 #include <EEPROM.h>
 #include <Wire.h>
 
-// #define LOG_ENABLED
+//#define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -29,6 +29,7 @@
 #define PIN_SPIClock (D13)
 #define PIN_RST (D9)
 #define PIN_DRDY (D2)
+#define PIN_INTERNAL_ADC (???)
 #define BUTTON_CALIBRATION (D8) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -41,6 +42,7 @@
 #define PIN_SPIClock (7)
 #define PIN_RST (5)
 #define PIN_DRDY (40)
+#define PIN_INTERNAL_ADC (1)
 #define BUTTON_CALIBRATION (3) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -53,6 +55,7 @@
 #define PIN_SPIClock (16)
 #define PIN_RST (15)
 #define PIN_DRDY (14)
+#define PIN_INTERNAL_ADC (???)
 #define BUTTON_CALIBRATION (32) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -62,6 +65,7 @@
 #endif
 
 #define AdcValuesWindowsCount (10)
+#define AdcValuesWindowsCountVoltageInternal (10)
 // define the number of bytes you want to access
 #define EEPROM_SIZE 2 //short type
 
@@ -88,10 +92,13 @@ ushort adcChannel2Value = 0;
 uint adcValuesSum = 0;
 uint adcValuesAverage = 0;
 uint adcValuesWindow[AdcValuesWindowsCount] = {0};
+uint adcValuesSumVoltageInternalAdc = 0;
+uint adcValuesAverageVoltageInternalAdc = 0;
+uint adcValuesWindowVoltageInternalAdc[AdcValuesWindowsCountVoltageInternal] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
-unsigned long readAdcNormalModeDelay = 50; // period for reading ADC in normal mode
-unsigned long readAdcChannel2Delay = 60000; // period for reading ADC in normal mode
+unsigned long readAdcNormalModeDelay = 20; // period for reading ADC in normal mode
+unsigned long readAdcChannel2Delay = 10000; // period for reading ADC in normal mode
 unsigned long LastAdcReadMillis = 0; // when ADC channel 1 was read
 unsigned long LastAdcChannel2ReadMillis = 0; // when ADC channel 2 was read
 unsigned long drawDelay = 300; // wait to draw
@@ -223,6 +230,7 @@ bool my_setCpuFrequencyMhz(uint32_t cpu_freq_mhz){
     return true;
 }
 
+#include "esp_pm.h"
 void setup() {
   uint32_t Freq = 0;
 #ifdef LOG_ENABLED
@@ -230,33 +238,20 @@ void setup() {
   Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
   Serial.flush();  // wait to empty the UART FIFO before changing the CPU Freq.
 #endif
-  LOG_LN(__LINE__);
-  //LOG_LN(millis() - current_millis);
   // delay(2000);
-  LOG_LN(__LINE__);
-  // setCpuFrequencyMhz(160);
   my_setCpuFrequencyMhz(40);
-  LOG_LN(__LINE__);
   Wire.begin();//PIN_SDA, PIN_SCL
-  LOG_LN(__LINE__);
   u8g2_prepare();
-  LOG_LN(__LINE__);
   // initialize EEPROM with predefined size
   EEPROM.begin(EEPROM_SIZE);
-  LOG_LN(__LINE__);
   pinMode(BUTTON_CALIBRATION, INPUT_PULLUP);
-LOG_LN(__LINE__);
   ad7705.resetHard();
   ad7705.reset();
-LOG_LN(__LINE__);
   ad7705.init(AD770X::CHN_AIN1, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
-  ad7705.init(AD770X::CHN_AIN2, AD770X::CLKDIV_0, AD770X::CLK_1MHz, AD770X::UNIPOLAR, AD770X::GAIN_1, AD770X::UPDATE_RATE_20);
   LOG_LN("--Init Done--");
-LOG_LN(__LINE__);
   currentMillis = millis();
   LastAdcReadMillis = currentMillis;
   LastDrawMillis = LastAdcReadMillis;
-LOG_LN(__LINE__);
   // read the 2 bytes of middleAdcIndex from flash memory
   calibrationInfo.minEarthAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
   calibrationInfo.maxEarthAdcIndex = EEPROM.read(2) | (EEPROM.read(3) << 8);
@@ -264,12 +259,9 @@ LOG_LN(__LINE__);
   LOG("calibrationBasedInfo.middleAdcIndex=");
   LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
-  while (!ad7705.dataReady(AD770X::CHN_AIN2));
-  ad7705.selectChannel(AD770X::CHN_AIN2);
-  adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
-  LOG("adcChannel2Value = ");
-  LOG_LN(adcChannel2Value);
-  adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
+  ushort value = analogRead(PIN_INTERNAL_ADC);
+  adcWindowVoltageInternalAdc_push(value);
+  adcChannel2Value = adcWindowVoltageInternalAdc_get_avg();
   LOG("adcChannel2Value = ");
   LOG_LN(adcChannel2Value);
   ad7705.selectChannel(AD770X::CHN_AIN1);
@@ -285,6 +277,10 @@ LOG_LN(__LINE__);
   LOG("APB Freq = ");
   LOG(Freq);
   LOG_LN(" Hz");
+
+  analogReadResolution(13);
+  analogSetAttenuation(ADC_11db);
+
   LOG_LN("--Start--");
   LOG_LN(__LINE__);
 }
@@ -347,15 +343,48 @@ int adcWindow_get_avg()
   return adcValuesAverage;
 }
 
-double getZeroCalibrationLinearAproximation(double value)
+void adcWindowVoltageInternalAdc_push(int value)
 {
-  return value * 2.2057 - 0.00016;
+  static int window_position = 0;
+  static int adcValuesCount = 0;
+  static char isAdcValuesNotFull = true;
+  if(true == isAdcValuesNotFull)
+  {
+    isAdcValuesNotFull = ((adcValuesCount + 1) <= AdcValuesWindowsCountVoltageInternal);
+  }
+  switch(isAdcValuesNotFull)
+  {
+    case true:
+      ++adcValuesCount;
+      adcValuesSumVoltageInternalAdc += value;
+      adcValuesAverageVoltageInternalAdc = adcValuesSumVoltageInternalAdc / adcValuesCount;
+      adcValuesWindowVoltageInternalAdc[adcValuesCount - 1] = value;
+    break;
+    case false:
+      adcValuesSumVoltageInternalAdc -= adcValuesWindowVoltageInternalAdc[window_position];
+      adcValuesSumVoltageInternalAdc += value;
+      adcValuesAverageVoltageInternalAdc = adcValuesSumVoltageInternalAdc / AdcValuesWindowsCountVoltageInternal;
+      adcValuesWindowVoltageInternalAdc[window_position] = value;
+      ++window_position;
+      window_position = window_position % AdcValuesWindowsCountVoltageInternal;
+    break;
+  }
 }
 
-double getZeroCalibrationQuadraticAproximation(double value)
+int adcWindowVoltageInternalAdc_get_avg()
 {
-  return (- 0.004685 * value * value) + 2.214885 * value;// + 0.000288;
+  return adcValuesAverageVoltageInternalAdc;
 }
+
+// double getZeroCalibrationLinearAproximation(double value)
+// {
+//   return value * 2.2057 - 0.00016;
+// }
+
+// double getZeroCalibrationQuadraticAproximation(double value)
+// {
+//   return (- 0.004685 * value * value) + 2.214885 * value;// + 0.000288;
+// }
 
 void drawNormalMode(const int adc)
 {
@@ -383,7 +412,9 @@ void drawNormalMode(const int adc)
     u8g2.printf("#%d: ADC=%d", i, adc);
     u8g2.setCursor(0, 25);
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
-    u8g2.printf("Battery=%f", adcChannel2Value * 5.0 / 65536.0);
+    //u8g2.printf("Battery=%f", adcChannel2Value * 5.0 / 65536.0);
+    const float batteryVolt = adcChannel2Value * 2 * 2.6 / 8192.0;
+    u8g2.printf("Battery=%.2f", batteryVolt);
     u8g2.setCursor(0, 40);
     if(abs(magn_B_u_tesla) < 1000)//
     {
@@ -442,6 +473,7 @@ void ModeNormalHandler()
 
   if ((unsigned long)(currentMillis - LastAdcChannel2ReadMillis) >= readAdcChannel2Delay)
   {
+/*
     ad7705.selectChannel(AD770X::CHN_AIN2);
     adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
     LOG("adcChannel2Value=");
@@ -450,6 +482,14 @@ void ModeNormalHandler()
     LOG("adcChannel2Value=");
     LOG_LN(adcChannel2Value);
     ad7705.selectChannel(AD770X::CHN_AIN1);
+*/
+    ushort value = analogRead(PIN_INTERNAL_ADC);
+    adcWindowVoltageInternalAdc_push(value);
+    adcChannel2Value = adcWindowVoltageInternalAdc_get_avg();
+
+    LOG(", Average=");
+    LOG_LN(adcChannel2Value);
+
     LastAdcChannel2ReadMillis = currentMillis;
   }
 
