@@ -6,7 +6,7 @@
 #include <EEPROM.h>
 #include <Wire.h>
 
-//#define LOG_ENABLED
+// #define LOG_ENABLED
 
 #ifdef LOG_ENABLED
 #define LOG(x) Serial.print(x)
@@ -65,9 +65,9 @@
 #endif
 
 #define AdcValuesWindowsCount (10)
-#define AdcValuesWindowsCountVoltageInternal (10)
+#define AdcValuesWindowsCountVoltageInternal (1)
 // define the number of bytes you want to access
-#define EEPROM_SIZE 2 //short type
+#define EEPROM_SIZE 4 //short type
 
 typedef enum
 {
@@ -92,13 +92,10 @@ ushort adcChannel2Value = 0;
 uint adcValuesSum = 0;
 uint adcValuesAverage = 0;
 uint adcValuesWindow[AdcValuesWindowsCount] = {0};
-uint adcValuesSumVoltageInternalAdc = 0;
-uint adcValuesAverageVoltageInternalAdc = 0;
-uint adcValuesWindowVoltageInternalAdc[AdcValuesWindowsCountVoltageInternal] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 20; // period for reading ADC in normal mode
-unsigned long readAdcChannel2Delay = 10000; // period for reading ADC in normal mode
+unsigned long readAdcChannel2Delay = 10000; // period for reading ADC for battery voltage
 unsigned long LastAdcReadMillis = 0; // when ADC channel 1 was read
 unsigned long LastAdcChannel2ReadMillis = 0; // when ADC channel 2 was read
 unsigned long drawDelay = 300; // wait to draw
@@ -255,13 +252,16 @@ void setup() {
   // read the 2 bytes of middleAdcIndex from flash memory
   calibrationInfo.minEarthAdcIndex = EEPROM.read(0) | (EEPROM.read(1) << 8);
   calibrationInfo.maxEarthAdcIndex = EEPROM.read(2) | (EEPROM.read(3) << 8);
+  LOG("calibrationInfo.minEarthAdcIndex=");
+  LOG_LN(calibrationInfo.minEarthAdcIndex);
+  LOG("calibrationInfo.maxEarthAdcIndex=");
+  LOG_LN(calibrationInfo.maxEarthAdcIndex);
   convertCalibationInfo();
   LOG("calibrationBasedInfo.middleAdcIndex=");
   LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
-  ushort value = analogRead(PIN_INTERNAL_ADC);
-  adcWindowVoltageInternalAdc_push(value);
-  adcChannel2Value = adcWindowVoltageInternalAdc_get_avg();
+  
+  adcChannel2Value = analogRead(PIN_INTERNAL_ADC);
   LOG("adcChannel2Value = ");
   LOG_LN(adcChannel2Value);
   ad7705.selectChannel(AD770X::CHN_AIN1);
@@ -341,39 +341,6 @@ void adcWindow_push(int value)
 int adcWindow_get_avg()
 {
   return adcValuesAverage;
-}
-
-void adcWindowVoltageInternalAdc_push(int value)
-{
-  static int window_position = 0;
-  static int adcValuesCount = 0;
-  static char isAdcValuesNotFull = true;
-  if(true == isAdcValuesNotFull)
-  {
-    isAdcValuesNotFull = ((adcValuesCount + 1) <= AdcValuesWindowsCountVoltageInternal);
-  }
-  switch(isAdcValuesNotFull)
-  {
-    case true:
-      ++adcValuesCount;
-      adcValuesSumVoltageInternalAdc += value;
-      adcValuesAverageVoltageInternalAdc = adcValuesSumVoltageInternalAdc / adcValuesCount;
-      adcValuesWindowVoltageInternalAdc[adcValuesCount - 1] = value;
-    break;
-    case false:
-      adcValuesSumVoltageInternalAdc -= adcValuesWindowVoltageInternalAdc[window_position];
-      adcValuesSumVoltageInternalAdc += value;
-      adcValuesAverageVoltageInternalAdc = adcValuesSumVoltageInternalAdc / AdcValuesWindowsCountVoltageInternal;
-      adcValuesWindowVoltageInternalAdc[window_position] = value;
-      ++window_position;
-      window_position = window_position % AdcValuesWindowsCountVoltageInternal;
-    break;
-  }
-}
-
-int adcWindowVoltageInternalAdc_get_avg()
-{
-  return adcValuesAverageVoltageInternalAdc;
 }
 
 // double getZeroCalibrationLinearAproximation(double value)
@@ -473,21 +440,8 @@ void ModeNormalHandler()
 
   if ((unsigned long)(currentMillis - LastAdcChannel2ReadMillis) >= readAdcChannel2Delay)
   {
-/*
-    ad7705.selectChannel(AD770X::CHN_AIN2);
-    adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
-    LOG("adcChannel2Value=");
-    LOG_LN(adcChannel2Value);
-    adcChannel2Value = ad7705.readADResultRaw(AD770X::CHN_AIN2);
-    LOG("adcChannel2Value=");
-    LOG_LN(adcChannel2Value);
-    ad7705.selectChannel(AD770X::CHN_AIN1);
-*/
-    ushort value = analogRead(PIN_INTERNAL_ADC);
-    adcWindowVoltageInternalAdc_push(value);
-    adcChannel2Value = adcWindowVoltageInternalAdc_get_avg();
-
-    LOG(", Average=");
+    adcChannel2Value = analogRead(PIN_INTERNAL_ADC);
+    LOG(", Battery Voltage=");
     LOG_LN(adcChannel2Value);
 
     LastAdcChannel2ReadMillis = currentMillis;

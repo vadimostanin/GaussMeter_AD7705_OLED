@@ -132,7 +132,6 @@ void AD770X::reset() {
         SPI.transfer(0xff);
     }
     digitalWrite(pinCS, HIGH);
-    Serial.println("reset");
 }
 
 AD770X::AD770X(double vref, int _pinCS, int _pinMOSI, int _pinMISO, int _pinSPIClock, int _pinRST, int _pinDRDY) {
@@ -166,7 +165,6 @@ void AD770X::init(byte channel, byte clkDivider, byte CLK_MHz, byte polarity, by
     writeSetupRegister(MODE_SELF_CAL, gain, polarity, 0, 0);
 
     while (!dataReady(channel)) {
-      Serial.println("waiting data");
       delay(10);
     };
 }
