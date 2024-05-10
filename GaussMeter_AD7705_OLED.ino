@@ -29,7 +29,7 @@
 #define PIN_SPIClock (D13)
 #define PIN_RST (D9)
 #define PIN_DRDY (D2)
-#define PIN_INTERNAL_ADC (???)
+#define PIN_BATTERY_INTERNAL_ADC (???)
 #define BUTTON_CALIBRATION (D8) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -42,7 +42,7 @@
 #define PIN_SPIClock (7)
 #define PIN_RST (5)
 #define PIN_DRDY (40)
-#define PIN_INTERNAL_ADC (1)
+#define PIN_BATTERY_INTERNAL_ADC (1)
 #define BUTTON_CALIBRATION (3) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -55,7 +55,7 @@
 #define PIN_SPIClock (16)
 #define PIN_RST (15)
 #define PIN_DRDY (14)
-#define PIN_INTERNAL_ADC (???)
+#define PIN_BATTERY_INTERNAL_ADC (???)
 #define BUTTON_CALIBRATION (32) // calibration button pin
 #define DEVBOARD_DEFINED
 #endif
@@ -88,14 +88,14 @@ typedef struct
 } CalibrationBasedInfoType;
 
 ushort adcValue = 0;
-ushort adcChannel2Value = 0;
+ushort adcBatteryChannelValue = 0;
 uint adcValuesSum = 0;
 uint adcValuesAverage = 0;
 uint adcValuesWindow[AdcValuesWindowsCount] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 20; // period for reading ADC in normal mode
-unsigned long readAdcChannel2Delay = 10000; // period for reading ADC for battery voltage
+unsigned long readAdcBatteryChannelDelay = 1000; // period for reading ADC for battery voltage
 unsigned long LastAdcReadMillis = 0; // when ADC channel 1 was read
 unsigned long LastAdcChannel2ReadMillis = 0; // when ADC channel 2 was read
 unsigned long drawDelay = 300; // wait to draw
@@ -125,9 +125,6 @@ void convertCalibationInfo()
 }
 
 #include "soc/rtc.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
 #include "freertos/xtensa_timer.h"
 void esp_timer_impl_update_apb_freq(uint32_t apb_ticks_per_us); //private in IDF
 static uint32_t calculateApb(struct rtc_cpu_freq_config_s * conf){
@@ -261,9 +258,9 @@ void setup() {
   LOG_LN(calibrationBasedInfo.middleAdcIndex);
   LOG_LN();
   
-  adcChannel2Value = analogRead(PIN_INTERNAL_ADC);
-  LOG("adcChannel2Value = ");
-  LOG_LN(adcChannel2Value);
+  adcBatteryChannelValue = analogRead(PIN_BATTERY_INTERNAL_ADC);
+  LOG("adcBatteryChannelValue = ");
+  LOG_LN(adcBatteryChannelValue);
   ad7705.selectChannel(AD770X::CHN_AIN1);
   Freq = getCpuFrequencyMhz();
   LOG("CPU Freq = ");
@@ -284,30 +281,7 @@ void setup() {
   LOG_LN("--Start--");
   LOG_LN(__LINE__);
 }
-/*
-void setup() {
-    Serial.begin(115200);    // set to ESP8266 bootloader baudrate, so that you can see the boot info
-    pinMode(PIN_DRDY, INPUT);
 
-    u8g2_prepare();
-
-    SPI.transfer(0x20); // Active Channel is Ain1(+)/Ain1(-), next operation as write to the clock register 
-    delay(1);
-    SPI.transfer(0x04); // ????? master clock enabled, 1 MHz Clock, set output rate to 25Hz
-    delay(1);
-    SPI.transfer(0x10); // Active Channel is Ain1(+)/Ain1(-), next operation as write to the setup register 
-    delay(1);
-//    SPI.transfer(0x44); // gain = 1, unipolar mode, buffer off, clear FSYNC and perform a Self Calibration 
-    SPI.transfer(0x40); // gain = 1, unipolar mode, buffer off, clear FSYNC and perform a Self Calibration
-//    SPI.transfer(0x7c); // gain = 128, unipolar mode, buffer off, clear FSYNC and perform a Self Calibration 
-    delay(1);
-
-    Serial.println("--Start waiting PIN_DRDY--");
-    while(digitalRead(PIN_DRDY));
-    Serial.println("--Init Done--");
-    
-}
-*/
 void adcWindow_push(int value)
 {
   static int window_position = 0;
@@ -374,13 +348,11 @@ void drawNormalMode(const int adc)
   }
   do {
     u8g2.setFont(u8g2_font_7x14_tf);
-    //u8g2.drawStr(0, 24, "Hello World!");
     u8g2.setCursor(0, 10);
     u8g2.printf("#%d: ADC=%d", i, adc);
     u8g2.setCursor(0, 25);
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
-    //u8g2.printf("Battery=%f", adcChannel2Value * 5.0 / 65536.0);
-    const float batteryVolt = adcChannel2Value * 2 * 2.6 / 8192.0;
+    const float batteryVolt = adcBatteryChannelValue * 2 * 2.55 / 8192.0;
     u8g2.printf("Battery=%.2f", batteryVolt);
     u8g2.setCursor(0, 40);
     if(abs(magn_B_u_tesla) < 1000)//
@@ -438,11 +410,11 @@ void ModeNormalHandler()
     LastAdcReadMillis = currentMillis;
   }
 
-  if ((unsigned long)(currentMillis - LastAdcChannel2ReadMillis) >= readAdcChannel2Delay)
+  if ((unsigned long)(currentMillis - LastAdcChannel2ReadMillis) >= readAdcBatteryChannelDelay)
   {
-    adcChannel2Value = analogRead(PIN_INTERNAL_ADC);
+    adcBatteryChannelValue = analogRead(PIN_BATTERY_INTERNAL_ADC);
     LOG(", Battery Voltage=");
-    LOG_LN(adcChannel2Value);
+    LOG_LN(adcBatteryChannelValue);
 
     LastAdcChannel2ReadMillis = currentMillis;
   }
