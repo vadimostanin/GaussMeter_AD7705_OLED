@@ -340,6 +340,8 @@ void drawNormalMode(const int adc)
   // const int magn_B_earth_max_index = calibrationBasedInfo.absAdcValueForEarthField;
   const float magn_B_earth_ratio = ((float)magn_B_index) / (float)calibrationBasedInfo.absAdcValueForEarthField;
   const int magn_B_u_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
+  const uint magn_B_u_tesla_abs = abs(magn_B_u_tesla);
+  const char sign = magn_B_u_tesla > 0 ? ' ' : '-';
 
   u8g2.firstPage();
   for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
@@ -349,25 +351,31 @@ void drawNormalMode(const int adc)
   do {
     u8g2.setFont(u8g2_font_7x14_tf);
     u8g2.setCursor(0, 10);
-    u8g2.printf("#%d: ADC=%d", i, adc);
+    u8g2.printf("#%03d: ADC=%05d", i, adc);
     u8g2.setCursor(0, 25);
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
     const float batteryVolt = adcBatteryChannelValue * 2 * 2.55 / 8192.0;
     u8g2.printf("Battery=%.2f", batteryVolt);
-    u8g2.setCursor(0, 40);
-    if(abs(magn_B_u_tesla) < 1000)//
+    u8g2.setFont(u8g2_font_battery19_tn);
+    u8g2.setCursor(100, 30);
+    if(int(batteryVolt) > 1.0)
     {
-      u8g2.printf("B: %d uT", (int)magn_B_u_tesla);
+      u8g2.print(int(abs(batteryVolt - 3.2) * 10 * 1.25) / 2);
     }
     else
     {
-      u8g2.printf("B: %d.%d%d%d mT", magn_B_u_tesla / 1000, (magn_B_index_abs % 1000) / 100, (magn_B_index_abs % 100) / 10, (magn_B_index_abs % 10));
+      u8g2.print(6);
     }
-        u8g2.setCursor(0, 50);
-    u8g2.setFont(u8g2_font_5x8_tf);
-    u8g2.printf("github.com/vadimostanin");
-    u8g2.setCursor(0, 57);
-    u8g2.printf("/GaussMeter_AD7705_OLED");
+    u8g2.setFont(u8g2_font_7x14_tf);
+    u8g2.setCursor(0, 40);
+    if(magn_B_u_tesla_abs < 1000)
+    {
+      u8g2.printf("B: %c%03u uT", sign, magn_B_u_tesla_abs);
+    }
+    else
+    {
+      u8g2.printf("B: %c%03d.%03d mT", sign, magn_B_u_tesla_abs / 1000, magn_B_u_tesla_abs % 1000);
+    }
   } while ( u8g2.nextPage() );
 //  u8g2.sendBuffer();
   ++i;
@@ -377,18 +385,28 @@ void drawCalibrationMode()
 {
   u8g2.firstPage();
   do {
-    u8g2.setFont(u8g2_font_7x14_tf);
-    //u8g2.drawStr(0, 24, "Hello World!");
-    u8g2.setCursor(0, 10);
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setCursor(0, 7);
     u8g2.printf("Calibration...");
 
     u8g2.setFont(u8g2_font_6x10_tf);
-    u8g2.setCursor(0, 25);
-    u8g2.printf("TURN THE SENSOR");
-    u8g2.setCursor(0, 40);
-    u8g2.printf("RANDOMLY ORDER");
-    u8g2.setCursor(0, 55);
-    u8g2.printf("AROUND ALL AXIS");
+    u8g2.setCursor(0, 16);
+    u8g2.printf("TURN SENSOR AROUND");
+
+    u8g2.setFont(u8g2_font_6x10_tf);
+    u8g2.setCursor(0, 26);
+    u8g2.printf("ADC: %05hu", adcValue);
+    u8g2.setCursor(0, 35);
+    u8g2.printf("MIN: %05hu", calibrationInfo.minEarthAdcIndex);
+    u8g2.setCursor(0, 44);
+    u8g2.printf("MAX: %05hu", calibrationInfo.maxEarthAdcIndex);
+    {
+      u8g2.setFont(u8g2_font_5x8_tf);
+      u8g2.setCursor(0, 50);
+      u8g2.printf("github.com/vadimostanin");
+      u8g2.setCursor(0, 57);
+      u8g2.printf("/GaussMeter_AD7705_OLED");
+    }
   } while ( u8g2.nextPage() );
 }
 
