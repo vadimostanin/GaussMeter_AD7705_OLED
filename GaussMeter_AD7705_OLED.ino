@@ -67,7 +67,7 @@
 #define AdcValuesWindowsCount (10)
 #define AdcValuesWindowsCountVoltageInternal (1)
 // define the number of bytes you want to access
-#define EEPROM_SIZE 4 //short type
+#define EEPROM_SIZE (4) //short type
 
 typedef enum
 {
@@ -77,21 +77,21 @@ typedef enum
 
 typedef struct
 {
-  unsigned short minEarthAdcIndex = 0xffff;
-  unsigned short maxEarthAdcIndex = 0;
+  uint32_t minEarthAdcIndex = 0xffff;
+  uint32_t maxEarthAdcIndex = 0;
 } CalibrationInfoType;
 
 typedef struct
 {
-    unsigned short middleAdcIndex = 0;
-    unsigned short absAdcValueForEarthField = 0;
+    uint32_t middleAdcIndex = 0;
+    uint32_t absAdcValueForEarthField = 0;
 } CalibrationBasedInfoType;
 
-ushort adcValue = 0;
-ushort adcBatteryChannelValue = 0;
-uint adcValuesSum = 0;
-uint adcValuesAverage = 0;
-uint adcValuesWindow[AdcValuesWindowsCount] = {0};
+uint32_t adcValue = 0;
+uint32_t adcBatteryChannelValue = 0;
+uint32_t adcValuesSum = 0;
+uint32_t adcValuesAverage = 0;
+uint32_t adcValuesWindow[AdcValuesWindowsCount] = {0};
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2);
 unsigned long currentMillis = 0;
 unsigned long readAdcNormalModeDelay = 20; // period for reading ADC in normal mode
@@ -284,9 +284,9 @@ void setup() {
 
 void adcWindow_push(int value)
 {
-  static int window_position = 0;
-  static int adcValuesCount = 0;
-  static char isAdcValuesNotFull = true;
+  static uint32_t window_position = 0;
+  static uint32_t adcValuesCount = 0;
+  static unsigned char isAdcValuesNotFull = true;
   if(true == isAdcValuesNotFull)
   {
     isAdcValuesNotFull = ((adcValuesCount + 1) <= AdcValuesWindowsCount);
@@ -312,7 +312,7 @@ void adcWindow_push(int value)
   }
 }
 
-int adcWindow_get_avg()
+uint32_t adcWindow_get_avg()
 {
   return adcValuesAverage;
 }
@@ -327,38 +327,38 @@ int adcWindow_get_avg()
 //   return (- 0.004685 * value * value) + 2.214885 * value;// + 0.000288;
 // }
 
-void drawNormalMode(const int adc)
+void drawNormalMode(const uint32_t adc)
 {
-  static uint i = 0;
-  const uint magn_B_index_zero = calibrationBasedInfo.middleAdcIndex;
-  const int magn_B_index = adc - magn_B_index_zero;
-  const int magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
+  static uint32_t i = 0;
+  const uint32_t magn_B_index_zero = calibrationBasedInfo.middleAdcIndex;
+  const int32_t magn_B_index = adc - magn_B_index_zero;
+  const uint32_t magn_B_index_abs = magn_B_index < 0 ? magn_B_index * -1 : magn_B_index;
   LOG("magn_B_index= ");
   LOG_LN(magn_B_index);
   LOG("calibrationBasedInfo.absAdcValueForEarthField= ");
   LOG_LN(calibrationBasedInfo.absAdcValueForEarthField);
   // const int magn_B_earth_max_index = calibrationBasedInfo.absAdcValueForEarthField;
   const float magn_B_earth_ratio = ((float)magn_B_index) / (float)calibrationBasedInfo.absAdcValueForEarthField;
-  const int magn_B_u_tesla = (int)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
-  const uint magn_B_u_tesla_abs = abs(magn_B_u_tesla);
+  const int32_t magn_B_u_tesla = (int32_t)(magn_B_earth_ratio * 50.0); //50uT = 1.0 ratio
+  const uint32_t magn_B_u_tesla_abs = abs(magn_B_u_tesla);
   const char sign = magn_B_u_tesla > 0 ? ' ' : '-';
+  const float batteryVolt = adcBatteryChannelValue * 2 * 2.55 / 8192.0;
 
   u8g2.firstPage();
-  for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
-  {
-    // u8g2.nextPage();
-  }
+  // for(int i = 0 ; i <= 2 ; ++i)//workaround to not redraw eight times same content, but 8-3=5 times
+  // {
+  //   // u8g2.nextPage();
+  // }
   do {
     u8g2.setFont(u8g2_font_7x14_tf);
     u8g2.setCursor(0, 10);
     u8g2.printf("#%03d: ADC=%05d", i, adc);
     u8g2.setCursor(0, 25);
     //      u8g2.printf("Volts=%f", getZeroCalibrationQuadraticAproximation(v1_d * 1.0 / 65536.0 * 5.0));//For MODE_ZERO_SCALE_CAL
-    const float batteryVolt = adcBatteryChannelValue * 2 * 2.55 / 8192.0;
     u8g2.printf("Battery=%.2f", batteryVolt);
     u8g2.setFont(u8g2_font_battery19_tn);
     u8g2.setCursor(100, 30);
-    if(int(batteryVolt) > 1.0)
+    if(uint32_t(batteryVolt) > 1.0)
     {
       u8g2.print(int(abs(batteryVolt - 3.2) * 10 * 1.25) / 2);
     }
@@ -377,7 +377,6 @@ void drawNormalMode(const int adc)
       u8g2.printf("B: %c%03d.%03d mT", sign, magn_B_u_tesla_abs / 1000, magn_B_u_tesla_abs % 1000);
     }
   } while ( u8g2.nextPage() );
-//  u8g2.sendBuffer();
   ++i;
 }
 
